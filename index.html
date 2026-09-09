@@ -377,6 +377,88 @@ h1,h2,h3,h4,p{margin:0}
 }
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 
+
+/* =========================================================
+   TRASPASOS + AJUSTE A PANTALLA DE MÓVIL (iPhone)
+   ========================================================= */
+html{-webkit-text-size-adjust:100%}
+body{overflow-x:hidden;min-height:100dvh}
+
+/* --- traspaso: colores --- */
+.seg button.on[data-t="traspaso"]{background:var(--violet)}
+.seg button{font-size:14px;padding:9px 6px}
+.btn--go.tras{background:linear-gradient(160deg,var(--violet),#5b2d78);
+  box-shadow:0 6px 18px rgba(123,63,160,.35)}
+.tx__a.tras{color:var(--violet)}
+.swaprow{display:flex;align-items:center;justify-content:center;margin:-2px 0 2px}
+.swapbtn{display:flex;align-items:center;gap:7px;background:var(--surface);
+  border:1px solid var(--line);border-radius:999px;padding:5px 13px;
+  font-size:12.5px;font-weight:700;color:var(--violet);box-shadow:var(--sh-sm)}
+.swapbtn:active{transform:scale(.96)}
+
+/* --- respiro general en móvil --- */
+.view{padding-left:max(16px,env(safe-area-inset-left));
+      padding-right:max(16px,env(safe-area-inset-right))}
+.chips{-webkit-overflow-scrolling:touch}
+.dchips input[type=date]{max-width:100%;min-width:0;-webkit-appearance:none;appearance:none}
+.note{max-width:100%}
+.amt{word-break:break-all}
+
+/* --- Registrar: cabecera fija, medio con scroll, teclado anclado --- */
+@media (max-width:900px){
+  .view--new.on{
+    display:flex;flex-direction:column;
+    height:calc(100vh - var(--navh) - var(--sb));
+    height:calc(100dvh - var(--navh) - var(--sb));
+    padding-bottom:0;overflow:hidden;
+  }
+  .view--new .newTop{flex:0 0 auto}
+  .view--new .newScroll{flex:1 1 auto;min-height:0;overflow-y:auto;
+    -webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding-bottom:6px}
+  .view--new .newFix{flex:0 0 auto;padding-top:6px}
+  .view--new .head{padding:calc(8px + var(--st)) 0 6px}
+  .view--new .amt{font-size:clamp(30px,10.5vw,46px);padding:6px 0 2px}
+  .view--new .amthint{margin-bottom:2px}
+  .view--new .lbl{margin:9px 4px 6px}
+  .view--new .chips{padding-bottom:0}
+  .view--new .pad{gap:7px;margin-top:0}
+  .view--new .key{height:clamp(42px,6.3dvh,54px);font-size:clamp(19px,2.5dvh,23px)}
+  .view--new .key svg{width:21px;height:21px}
+  .view--new .acts{margin-top:8px}
+  .view--new .btn{height:clamp(46px,6.5dvh,54px);font-size:16px}
+  .view--new .btn--x,.view--new .btn--del{flex:0 0 clamp(46px,6.5dvh,54px)}
+}
+/* el título no debe empujar al selector de mes */
+@media (max-width:900px){
+  .view--new .head{gap:8px}
+  .view--new .brand{font-size:15.5px;min-width:0;overflow:hidden;white-space:nowrap}
+  .view--new .mnav{flex:0 0 auto}
+  /* chips un punto más compactos: entra más contenido sin apretar el dedo */
+  .view--new .chip{padding:6px 11px;font-size:13.5px}
+  .view--new .swaprow{margin:3px 0 0}
+  /* el borde inferior del área con scroll se desvanece: se ve que hay más abajo */
+  .view--new .newScroll{
+    -webkit-mask-image:linear-gradient(to bottom,#000 0,#000 calc(100% - 16px),transparent 100%);
+            mask-image:linear-gradient(to bottom,#000 0,#000 calc(100% - 16px),transparent 100%);
+    padding-bottom:14px;
+  }
+}
+
+/* pantallas angostas: el logo se queda, el rótulo estorba (la barra de abajo ya lo dice) */
+@media (max-width:430px){
+  .brand{font-size:16.5px;white-space:nowrap;min-width:0}
+  .head{gap:8px}
+  .mbtn{font-size:13px;padding:7px 10px}
+  .view--new .brand{font-size:0;gap:0}
+  .view--new .brand i{width:27px;height:27px}
+}
+
+/* pantallas cortas (iPhone SE / mini): apretar un poco más */
+@media (max-width:900px) and (max-height:700px){
+  .view--new .seg button{padding:7px 5px;font-size:13px}
+  .view--new .note{padding:9px 12px;font-size:14px}
+  .view--new .lbl{margin:7px 4px 5px;font-size:11px}
+}
 </style>
 </head>
 <body>
@@ -405,6 +487,7 @@ h1,h2,h3,h4,p{margin:0}
 
     <!-- ================= REGISTRAR (pantalla principal) ================= -->
     <section class="view view--pad view--new on" id="v-new">
+      <div class="newTop">
       <div class="head">
         <div class="brand"><i></i>Registrar</div>
         <div class="mnav">
@@ -426,15 +509,36 @@ h1,h2,h3,h4,p{margin:0}
       <div class="seg" id="txSeg">
         <button data-t="gasto" class="on">Gasto</button>
         <button data-t="ingreso">Ingreso</button>
+        <button data-t="traspaso">Traspaso</button>
       </div>
 
       <div class="amt z" id="txAmt"><span class="c" data-cur>S/</span><span id="txAmtV">0</span></div>
       <div class="amthint" id="txHint"></div>
+      </div><!-- /newTop -->
 
-      <div class="lbl">Método de pago</div>
-      <div class="chips" id="txMet"></div>
-      <div class="lbl" id="txCatL">Categoría</div>
-      <div class="chips" id="txCat"></div>
+      <div class="newScroll">
+
+      <div id="txMetBlock">
+        <div class="lbl">Método de pago</div>
+        <div class="chips" id="txMet"></div>
+      </div>
+
+      <div id="txTrBlock" class="hide">
+        <div class="lbl">Sale de</div>
+        <div class="chips" id="txFromBox"></div>
+        <div class="swaprow">
+          <button class="swapbtn" id="txSwap" type="button">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M7 4L3 8l4 4M3 8h13a5 5 0 0 1 0 10h-3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Invertir</button>
+        </div>
+        <div class="lbl">Entra a</div>
+        <div class="chips" id="txToBox"></div>
+      </div>
+
+      <div id="txCatBlock">
+        <div class="lbl" id="txCatL">Categoría</div>
+        <div class="chips" id="txCat"></div>
+      </div>
 
       <div class="lbl">Descripción</div>
       <input class="note" id="txNote" placeholder="Opcional: ej. almuerzo en el mercado" maxlength="70">
@@ -446,12 +550,16 @@ h1,h2,h3,h4,p{margin:0}
         <input type="date" id="txDateI">
       </div>
 
+      </div><!-- /newScroll -->
+
+      <div class="newFix">
       <div class="pad" id="txPad"></div>
       <div class="acts">
         <button class="btn btn--del hide" id="txDel" aria-label="Eliminar">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m-8 0v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <button class="btn btn--go gasto" id="txSave" disabled>Guardar</button>
       </div>
+      </div><!-- /newFix -->
     </section>
 
     <!-- ================= INICIO ================= -->
@@ -760,6 +868,10 @@ const today = () => isoOf(new Date());
 const mk = iso => iso.slice(0,7);
 const mName = k => { const [y,m]=k.split("-"); return `${MES[+m-1]} ${y}`; };
 const mShort= k => { const [y,m]=k.split("-"); return `${MES3[+m-1]} ${y.slice(2)}`; };
+// en pantallas angostas el nombre completo del mes empuja al título: se usa la forma corta
+const angosto = () => window.innerWidth < 430;
+const mLabel = k => { const [y,m]=k.split("-");
+  return angosto() ? `${cap(MES3[+m-1])} ${y}` : cap(mName(k)); };
 const cap = s => s.charAt(0).toUpperCase()+s.slice(1);
 const fmt = n => (Math.round(n*100)/100).toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2});
 const fmtK= n => Math.abs(n)>=10000 ? (n/1000).toFixed(1).replace(".0","")+"k" : fmt(n);
@@ -802,8 +914,13 @@ const incM   = k => sum(txOf(k).filter(t=>t.type==="ingreso"));
 const spentCat = (k,c)=> sum(txOf(k).filter(t=>t.type==="gasto"&&t.cat===c));
 const spentMet = (k,m)=> sum(txOf(k).filter(t=>t.type==="gasto"&&t.method===m));
 const incMet   = (k,m)=> sum(txOf(k).filter(t=>t.type==="ingreso"&&t.method===m));
-// saldo disponible = declarado + ingresos - gastos
-const availMet = (k,m)=> (balDecl(k)[m]||0) + incMet(k,m) - spentMet(k,m);
+// traspasos entre métodos (no son gasto ni ingreso: solo mueven dinero)
+const isTr     = t => t.type==="traspaso";
+const trOutMet = (k,m)=> sum(txOf(k).filter(t=>isTr(t)&&t.from===m));
+const trInMet  = (k,m)=> sum(txOf(k).filter(t=>isTr(t)&&t.to===m));
+// saldo disponible = declarado + ingresos - gastos + traspasos recibidos - traspasos enviados
+const availMet = (k,m)=> (balDecl(k)[m]||0) + incMet(k,m) - spentMet(k,m)
+                         + trInMet(k,m) - trOutMet(k,m);
 const budTotal = k => Object.values(budOf(k)).reduce((s,n)=>s+(n||0),0);
 
 /* =========================================================
@@ -845,6 +962,8 @@ function makePad(mountSel, amtSel, valSel, onChange){
    HOJA: NUEVO / EDITAR MOVIMIENTO
    ========================================================= */
 let txType="gasto", txCat=null, txMet=S.methods[0].id, txDate=today(), txEdit=null;
+const otherMet = id => (S.methods.find(m=>m.id!==id) || S.methods[0]).id;
+let trFrom=S.methods[0].id, trTo=otherMet(S.methods[0].id);
 const txPad = makePad("#txPad","#txAmt","#txAmtV", v=>{ $("#txSave").disabled = !(v>0); });
 
 function renderChips(box, items, sel, cb){
@@ -855,19 +974,40 @@ function renderChips(box, items, sel, cb){
 }
 function paintTx(){
   $$("#txSeg button").forEach(b=>b.classList.toggle("on", b.dataset.t===txType));
+  const tras = txType==="traspaso";
   $("#txSave").classList.toggle("gasto", txType==="gasto");
-  $("#txCatL").textContent = txType==="gasto" ? "Categoría" : "Tipo de ingreso";
-  const cats = catsOf(txType);
-  if(!cats.find(c=>c.id===txCat)) txCat = cats[0].id;
-  renderChips($("#txCat"), cats, txCat, id=>{ txCat=id; paintTx(); });
-  renderChips($("#txMet"), S.methods, txMet, id=>{ txMet=id; paintTx(); });
+  $("#txSave").classList.toggle("tras", tras);
+  $("#txMetBlock").classList.toggle("hide", tras);
+  $("#txCatBlock").classList.toggle("hide", tras);
+  $("#txTrBlock").classList.toggle("hide", !tras);
+
+  if(tras){
+    // saneo: los dos métodos deben existir y ser distintos
+    if(!S.methods.find(m=>m.id===trFrom)) trFrom = S.methods[0].id;
+    if(!S.methods.find(m=>m.id===trTo))   trTo   = otherMet(trFrom);
+    if(trFrom===trTo)                     trTo   = otherMet(trFrom);
+    renderChips($("#txFromBox"), S.methods, trFrom, id=>{
+      if(id===trTo) trTo = trFrom;      // si eliges el destino como origen, se intercambian
+      trFrom = id; paintTx(); });
+    renderChips($("#txToBox"), S.methods, trTo, id=>{
+      if(id===trFrom) trFrom = trTo;
+      trTo = id; paintTx(); });
+  }else{
+    $("#txCatL").textContent = txType==="gasto" ? "Categoría" : "Tipo de ingreso";
+    const cats = catsOf(txType);
+    if(!cats.find(c=>c.id===txCat)) txCat = cats[0].id;
+    renderChips($("#txCat"), cats, txCat, id=>{ txCat=id; paintTx(); });
+    renderChips($("#txMet"), S.methods, txMet, id=>{ txMet=id; paintTx(); });
+  }
+
   const t=today(), y=isoOf(new Date(Date.now()-864e5));
   $$("#txDate .chip").forEach(b=>{
     const d = b.dataset.d==="0" ? t : y;
     b.classList.toggle("on", txDate===d);
   });
   $("#txDateI").value = txDate;
-  $("#txSave").textContent = txEdit ? "Guardar cambios" : (txType==="gasto"?"Guardar gasto":"Guardar ingreso");
+  $("#txSave").textContent = txEdit ? "Guardar cambios"
+    : (tras ? "Guardar traspaso" : (txType==="gasto"?"Guardar gasto":"Guardar ingreso"));
   $("#txDel").classList.toggle("hide", !txEdit);
   $("#txEditBar").classList.toggle("hide", !txEdit);
   hintTx();
@@ -876,6 +1016,11 @@ function paintTx(){
 function hintTx(){
   const el=$("#txHint"); if(!el) return;
   const k = mk(txDate);
+  if(txType==="traspaso"){
+    const a=metOf(trFrom), b=metOf(trTo);
+    el.textContent = `Disponible en ${a.name}: ${S.currency} ${fmt(availMet(k,trFrom))}`;
+    return;
+  }
   if(txType==="gasto"){
     const lim = budOf(k)[txCat]||0, sp = spentCat(k,txCat);
     const c = findIn(S.catsE,txCat);
@@ -888,15 +1033,21 @@ function hintTx(){
 }
 function resetTx(){
   txEdit=null; txType="gasto"; txCat=null; txMet=S.methods[0].id; txDate=today();
+  trFrom=S.methods[0].id; trTo=otherMet(S.methods[0].id);
   txPad.set(0); $("#txNote").value=""; paintTx();
 }
 function openTx(edit){
   txEdit = edit || null;
-  if(edit){ txType=edit.type; txCat=edit.cat; txMet=edit.method; txDate=edit.date;
-            txPad.set(edit.amount); $("#txNote").value = edit.note||""; }
+  if(edit){
+    txType=edit.type; txDate=edit.date;
+    if(edit.type==="traspaso"){ trFrom=edit.from; trTo=edit.to; }
+    else { txCat=edit.cat; txMet=edit.method; }
+    txPad.set(edit.amount); $("#txNote").value = edit.note||"";
+  }
   paintTx(); go("new");
 }
 $("#txCancel").onclick = ()=>{ resetTx(); toast("Edición cancelada"); };
+$("#txSwap").onclick = ()=>{ const a=trFrom; trFrom=trTo; trTo=a; paintTx(); };
 $("#txSeg").onclick = e=>{ const b=e.target.closest("[data-t]"); if(!b) return;
   txType=b.dataset.t; txCat=null; paintTx(); };
 $("#txDate").onclick = e=>{ const b=e.target.closest("[data-d]"); if(!b) return;
@@ -905,13 +1056,27 @@ $("#txDateI").onchange = e=>{ if(e.target.value){ txDate=e.target.value; paintTx
 $("#txSave").onclick = ()=>{
   const amt = Math.round(txPad.val()*100)/100;
   if(!(amt>0)) return;
-  if(txEdit){
+  const nota = $("#txNote").value.trim();
+
+  if(txType==="traspaso"){
+    if(trFrom===trTo){ toast("Elige dos métodos distintos"); return; }
+    if(txEdit){
+      delete txEdit.cat; delete txEdit.method;
+      Object.assign(txEdit,{type:"traspaso",amount:amt,from:trFrom,to:trTo,note:nota,date:txDate});
+      toast("Cambios guardados");
+    }else{
+      S.txs.push({id:uid(),type:"traspaso",amount:amt,from:trFrom,to:trTo,
+                  note:nota,date:txDate,ts:Date.now()});
+      toast(`Traspaso ✓  ${metOf(trFrom).name} → ${metOf(trTo).name}`);
+    }
+  }else if(txEdit){
+    delete txEdit.from; delete txEdit.to;
     Object.assign(txEdit,{type:txType,amount:amt,cat:txCat,method:txMet,
-                          note:$("#txNote").value.trim(),date:txDate});
+                          note:nota,date:txDate});
     toast("Cambios guardados");
   }else{
     S.txs.push({id:uid(),type:txType,amount:amt,cat:txCat,method:txMet,
-                note:$("#txNote").value.trim(),date:txDate,ts:Date.now()});
+                note:nota,date:txDate,ts:Date.now()});
     toast(txType==="gasto"?"Gasto registrado ✓":"Ingreso registrado ✓");
   }
   const wasEdit = !!txEdit;
@@ -920,7 +1085,10 @@ $("#txSave").onclick = ()=>{
 };
 $("#txDel").onclick = ()=>{
   if(!txEdit) return;
-  if(confirm(`¿Eliminar este movimiento?\n${catOf(txEdit).name} · ${S.currency} ${fmt(txEdit.amount)}`)){
+  const etq = isTr(txEdit)
+    ? `Traspaso ${metOf(txEdit.from).name} → ${metOf(txEdit.to).name}`
+    : catOf(txEdit).name;
+  if(confirm(`¿Eliminar este movimiento?\n${etq} · ${S.currency} ${fmt(txEdit.amount)}`)){
     S.txs = S.txs.filter(t=>t.id!==txEdit.id); save(); resetTx(); renderAll(); go("home"); toast("Eliminado");
   }
 };
@@ -977,20 +1145,24 @@ function renderHome(){
   } else $("#budBlock").classList.add("hide");
 
   // filtros
-  const pres=[...new Set(txOf(VM).map(t=>t.cat+"|"+t.type))];
+  const pres=[...new Set(txOf(VM).filter(t=>!isTr(t)).map(t=>t.cat+"|"+t.type))];
+  const hayTr = txOf(VM).some(isTr);
   const fbox=$("#fRow");
-  if(txOf(VM).length>1 && pres.length>1){
+  if(txOf(VM).length>1 && (pres.length + (hayTr?1:0))>1){
     const items = pres.map(p=>{ const [id,ty]=p.split("|"); return {...findIn(catsOf(ty),id), _k:p}; });
     fbox.innerHTML = `<button class="chip ${!filt?"on":""}" data-f="">Todo</button>`+
       items.map(c=>`<button class="chip ${filt===c._k?"on":""}" data-f="${c._k}">
-        <span class="dot" style="background:${rgba(c.color,.22)}">${c.icon}</span>${esc(c.name)}</button>`).join("");
+        <span class="dot" style="background:${rgba(c.color,.22)}">${c.icon}</span>${esc(c.name)}</button>`).join("")+
+      (hayTr?`<button class="chip ${filt==="__tr__"?"on":""}" data-f="__tr__">
+        <span class="dot" style="background:${rgba("#7b3fa0",.22)}">⇄</span>Traspasos</button>`:"");
     fbox.onclick=e=>{ const b=e.target.closest("[data-f]"); if(!b) return;
       filt=b.dataset.f||null; renderHome(); };
   } else { fbox.innerHTML=""; }
 
   // lista
   let list = txOf(VM);
-  if(filt){ const [id,ty]=filt.split("|"); list=list.filter(t=>t.cat===id&&t.type===ty); }
+  if(filt==="__tr__"){ list=list.filter(isTr); }
+  else if(filt){ const [id,ty]=filt.split("|"); list=list.filter(t=>t.cat===id&&t.type===ty); }
   list.sort((a,b)=> b.date.localeCompare(a.date) || b.ts-a.ts);
   const wrap=$("#txList"), emp=$("#txEmpty");
   if(!list.length){ wrap.innerHTML=""; emp.classList.remove("hide");
@@ -1001,7 +1173,9 @@ function renderHome(){
   wrap.innerHTML = Object.keys(gr).map(d=>{
     const dg = gr[d].filter(t=>t.type==="gasto").reduce((s,t)=>s+t.amount,0);
     const di = gr[d].filter(t=>t.type==="ingreso").reduce((s,t)=>s+t.amount,0);
-    const tot = [dg?`-${S.currency} ${fmt(dg)}`:"", di?`+${S.currency} ${fmt(di)}`:""].filter(Boolean).join("  ");
+    const dt = gr[d].filter(isTr).reduce((s,t)=>s+t.amount,0);
+    const tot = [dg?`-${S.currency} ${fmt(dg)}`:"", di?`+${S.currency} ${fmt(di)}`:"",
+                 dt?`⇄ ${S.currency} ${fmt(dt)}`:""].filter(Boolean).join("  ");
     return `<div class="day"><div class="day__t"><span>${dayLbl(d)}</span><span>${tot}</span></div>
       <div class="day__box">${gr[d].map(rowTx).join("")}</div></div>`;
   }).join("");
@@ -1009,6 +1183,16 @@ function renderHome(){
     const t=S.txs.find(x=>x.id===b.dataset.tx); if(t) openTx(t); };
 }
 function rowTx(t){
+  if(isTr(t)){
+    const a=metOf(t.from), b=metOf(t.to);
+    return `<button class="tx" data-tx="${t.id}">
+      <span class="tx__i" style="background:${rgba("#7b3fa0",.14)};color:var(--violet);font-size:19px">⇄
+        <b style="background:${rgba(b.color,.9)}" title="${esc(b.name)}">${b.icon}</b></span>
+      <span class="tx__b"><span class="tx__c">Traspaso</span>
+        <span class="tx__n">${t.note?esc(t.note)+" · ":""}${esc(a.name)} → ${esc(b.name)}</span></span>
+      <span class="tx__a tras">${S.currency} ${fmt(t.amount)}</span>
+    </button>`;
+  }
   const c=catOf(t), m=metOf(t.method), inc=t.type==="ingreso";
   return `<button class="tx" data-tx="${t.id}">
     <span class="tx__i" style="background:${rgba(c.color,.15)}">${c.icon}
@@ -1033,6 +1217,8 @@ function renderPlan(){
   bx.innerHTML = S.methods.map(m=>{
     const dec=balDecl(VM)[m.id], av=availMet(VM,m.id);
     const usado = spentMet(VM,m.id), entr = incMet(VM,m.id);
+    const neto  = trInMet(VM,m.id) - trOutMet(VM,m.id);
+    const trTxt = neto ? `<span style="color:var(--violet)">⇄ ${neto>0?"+":"−"}${fmt(Math.abs(neto))}</span>` : "";
     return `<button class="row" data-bal="${m.id}">
       <span class="dot" style="width:34px;height:34px;border-radius:11px;font-size:16px;background:${rgba(m.color,.16)}">${m.icon}</span>
       <span class="row__b">
@@ -1040,7 +1226,7 @@ function renderPlan(){
           <span class="row__v" style="color:${av<0?"var(--coral-dk)":"var(--ink)"}">${S.currency} ${fmt(av)}</span></span>
         <span class="row__s">
           <span>${dec===undefined?'<span class="row__set">Declarar saldo</span>':"Declaraste "+S.currency+" "+fmt(dec)}</span>
-          <span>${entr?"+"+fmt(entr)+"  ":""}${usado?"−"+fmt(usado):""}</span></span>
+          <span>${entr?"+"+fmt(entr)+"  ":""}${usado?"−"+fmt(usado)+"  ":""}${trTxt}</span></span>
       </span></button>`;
   }).join("");
   bx.onclick = e=>{ const b=e.target.closest("[data-bal]"); if(!b) return;
@@ -1251,19 +1437,27 @@ $("#iSave").onclick = ()=>{
 $("#iDel").onclick = ()=>{
   if(!curItem) return;
   if(S[curKey].length<=1){ alert("Debe quedar al menos uno."); return; }
-  const used = S.txs.filter(t=> curKey==="methods" ? t.method===curItem.id
+  const used = S.txs.filter(t=> curKey==="methods"
+                ? (t.method===curItem.id || t.from===curItem.id || t.to===curItem.id)
                 : (t.cat===curItem.id && t.type===(curKey==="catsI"?"ingreso":"gasto"))).length;
   const msg = used ? `Hay ${used} movimiento(s) usando "${curItem.name}".\nPasarán a "${S[curKey].filter(x=>x.id!==curItem.id)[0].name}".\n\n¿Eliminar igual?`
                    : `¿Eliminar "${curItem.name}"?`;
   if(!confirm(msg)) return;
   const rest = S[curKey].filter(x=>x.id!==curItem.id), fb=rest[0].id;
   S.txs.forEach(t=>{
-    if(curKey==="methods" && t.method===curItem.id) t.method=fb;
+    if(curKey==="methods"){
+      if(t.method===curItem.id) t.method=fb;
+      if(t.from===curItem.id)   t.from=fb;
+      if(t.to===curItem.id)     t.to=fb;
+    }
     if(curKey==="catsE" && t.type==="gasto"   && t.cat===curItem.id) t.cat=fb;
     if(curKey==="catsI" && t.type==="ingreso" && t.cat===curItem.id) t.cat=fb;
   });
   if(curKey==="catsE") Object.values(S.budgets).forEach(b=>delete b[curItem.id]);
-  if(curKey==="methods") Object.values(S.balances).forEach(b=>delete b[curItem.id]);
+  if(curKey==="methods"){
+    Object.values(S.balances).forEach(b=>delete b[curItem.id]);
+    S.txs = S.txs.filter(t=>!(isTr(t) && t.from===t.to));   // traspasos que quedaron sin sentido
+  }
   S[curKey]=rest; save(); closeSheet(shItem); drawList(); renderAll(); toast("Eliminado");
 };
 $$("[data-ed]").forEach(b=>b.onclick=()=>openList(b.dataset.ed));
@@ -1308,8 +1502,14 @@ function exportCSV(){
   if(!S.txs.length){ toast("No hay nada para exportar"); return; }
   const rows=[["Fecha","Tipo","Categoría","Método","Descripción","Monto","Moneda"]];
   [...S.txs].sort((a,b)=>a.date.localeCompare(b.date)||a.ts-b.ts).forEach(t=>{
-    rows.push([t.date, t.type==="gasto"?"Gasto":"Ingreso", catOf(t).name, metOf(t.method).name,
-               t.note||"", t.amount.toFixed(2), S.currency]);
+    if(isTr(t)){
+      rows.push([t.date, "Traspaso", "Traspaso",
+                 `${metOf(t.from).name} → ${metOf(t.to).name}`,
+                 t.note||"", t.amount.toFixed(2), S.currency]);
+    }else{
+      rows.push([t.date, t.type==="gasto"?"Gasto":"Ingreso", catOf(t).name, metOf(t.method).name,
+                 t.note||"", t.amount.toFixed(2), S.currency]);
+    }
   });
   dl(`finanzas_${today()}.csv`, "\uFEFF"+rows.map(r=>r.map(cell).join(",")).join("\r\n"),
      "text/csv;charset=utf-8");
@@ -1371,11 +1571,14 @@ $$(".nav [data-v]").forEach(b=>b.onclick=()=>{
 /* ---------- render global ---------- */
 function renderAll(){
   ensureBudget(VM);
-  $$(".mLabel").forEach(e=>e.textContent=cap(mName(VM)));
+  $$(".mLabel").forEach(e=>e.textContent=mLabel(VM));
   $$("[data-cur]").forEach(e=>e.textContent=S.currency);
   renderHome(); renderPlan(); renderRep(); renderCfg(); renderClose(); paintTx();
 }
 renderAll();
+
+// al girar el teléfono cambia el ancho: se repinta la etiqueta del mes
+let rzT; addEventListener("resize", ()=>{ clearTimeout(rzT); rzT=setTimeout(renderAll,150); });
 
 /* archivo único: sin service worker */
 })();
