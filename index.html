@@ -847,6 +847,7 @@ const DEF = () => ({
   closed:{},    // "2026-09": {ts,bud,spent}
   budgets:{},   // "2026-09": {catId:monto}
   balances:{},  // "2026-09": {methodId:monto}
+  dayCost:{},   // catId: costo fijo por día (ej. comida: 10), no depende del mes
 });
 
 let S;
@@ -926,16 +927,17 @@ const budTotal = k => Object.values(budOf(k)).reduce((s,n)=>s+(n||0),0);
 
 /* categorías que además se miden en "días" (cuántos días te alcanza lo que queda) */
 const DIAS_CATS = ["comida"];
-/* promedio = gasto de la categoría ÷ días distintos en que hubo gasto;
-   días = lo que queda del presupuesto ÷ ese promedio (null si aún no hay gastos) */
+/* costo por día = el que el usuario fijó (S.dayCost) o, si no, el promedio de la categoría
+   (gasto ÷ días distintos con gasto); días = lo que queda del presupuesto ÷ ese costo.
+   null si no hay costo fijo ni gastos todavía */
 function diasCat(k,c){
   const porDia={};
   txOf(k).filter(t=>t.type==="gasto"&&t.cat===c)
          .forEach(t=>{ porDia[t.date]=(porDia[t.date]||0)+t.amount; });
-  const n=Object.keys(porDia).length, sp=spentCat(k,c);
-  if(!n||!(sp>0)) return null;
-  const avg=sp/n, lim=budOf(k)[c]||0;
-  return { avg, lim, dias: lim>0 ? Math.max(0,Math.floor((lim-sp)/avg+1e-9)) : null };
+  const n=Object.keys(porDia).length, sp=spentCat(k,c), fijo=S.dayCost[c]||0;
+  if(!fijo && (!n||!(sp>0))) return null;
+  const avg=fijo||sp/n, lim=budOf(k)[c]||0;
+  return { avg, fijo:fijo>0, lim, dias: lim>0 ? Math.max(0,Math.floor((lim-sp)/avg+1e-9)) : null };
 }
 const diasTxt = d => d.dias===null ? "" :
   d.dias===0 ? "no alcanza para otro día" : `≈ ${d.dias} ${d.dias===1?"día":"días"}`;
@@ -1271,16 +1273,34 @@ function renderPlan(){
           <span style="color:${sp>lim?"var(--coral-dk)":"var(--muted)"}">${sp>lim?"excedido "+fmt(sp-lim):"quedan "+fmt(lim-sp)}</span></span>`
         :`<span class="row__s"><span>Gastado ${S.currency} ${fmt(sp)}</span></span>`}
         ${(()=>{ const d=DIAS_CATS.includes(c.id)&&diasCat(VM,c.id); if(!d) return "";
-          const t=diasTxt(d), prom=`prom. ${S.currency} ${fmt(d.avg)} por día`;
+          const t=diasTxt(d), prom = d.fijo ? `${S.currency} ${fmt(d.avg)} por día (fijo)`
+                                            : `prom. ${S.currency} ${fmt(d.avg)} por día`;
           return t ? `<span class="row__s"><span style="font-weight:600;color:${d.dias===0?"var(--coral-dk)":"var(--accent-dk)"}">${t}</span>
             <span>${prom}</span></span>`
                    : `<span class="row__s"><span>${prom}</span></span>`; })()}
-      </span></button>`;
+      </span></button>${DIAS_CATS.includes(c.id) ? diaRow(c) : ""}`;
   }).join("");
-  pb.onclick = e=>{ const b=e.target.closest("[data-bud]"); if(!b) return;
+  pb.onclick = e=>{
+    const dy=e.target.closest("[data-day]");
+    if(dy){ const c=findIn(S.catsE,dy.dataset.day);
+      askAmount(`Costo por día: ${c.name}`, "Pon 0 para usar tu promedio", S.dayCost[c.id]||0,
+        v=>{ if(v>0) S.dayCost[c.id]=v; else delete S.dayCost[c.id]; });
+      return; }
+    const b=e.target.closest("[data-bud]"); if(!b) return;
     const c=findIn(S.catsE,b.dataset.bud);
     askAmount(`Presupuesto: ${c.name}`, cap(mName(VM)), bud[c.id]||0,
       v=>{ if(v>0) bud[c.id]=v; else delete bud[c.id]; }); };
+}
+/* fila para fijar el costo por día de una categoría medida en días (ej. el menú) */
+function diaRow(c){
+  const v=S.dayCost[c.id]||0;
+  return `<button class="row" data-day="${c.id}">
+    <span class="dot" style="width:34px;height:34px;border-radius:11px;font-size:16px;background:${rgba(c.color,.16)}">📅</span>
+    <span class="row__b">
+      <span class="row__t"><span>Costo por día · ${esc(c.name)}</span>
+        <span class="row__v">${v>0?S.currency+" "+fmt(v):'<span class="row__set">Fijar</span>'}</span></span>
+      <span class="row__s"><span>${v>0?"Los días se calculan con este costo":"Sin fijar: se usa tu promedio de gasto"}</span></span>
+    </span></button>`;
 }
 
 /* ---------- cierre de mes ---------- */
@@ -1481,7 +1501,7 @@ $("#iDel").onclick = ()=>{
     if(curKey==="catsE" && t.type==="gasto"   && t.cat===curItem.id) t.cat=fb;
     if(curKey==="catsI" && t.type==="ingreso" && t.cat===curItem.id) t.cat=fb;
   });
-  if(curKey==="catsE") Object.values(S.budgets).forEach(b=>delete b[curItem.id]);
+  if(curKey==="catsE"){ Object.values(S.budgets).forEach(b=>delete b[curItem.id]); delete S.dayCost[curItem.id]; }
   if(curKey==="methods"){
     Object.values(S.balances).forEach(b=>delete b[curItem.id]);
     S.txs = S.txs.filter(t=>!(isTr(t) && t.from===t.to));   // traspasos que quedaron sin sentido
