@@ -926,7 +926,7 @@ const availMet = (k,m)=> (balDecl(k)[m]||0) + incMet(k,m) - spentMet(k,m)
 const budTotal = k => Object.values(budOf(k)).reduce((s,n)=>s+(n||0),0);
 
 /* categorías que además se miden en "días" (cuántos días te alcanza lo que queda) */
-const DIAS_CATS = ["comida"];
+const DIAS_CATS = ["comida","pasajes"];
 /* costo por día = el que el usuario fijó (S.dayCost) o, si no, el promedio de la categoría
    (gasto ÷ días distintos con gasto); días = lo que queda del presupuesto ÷ ese costo.
    null si no hay costo fijo ni gastos todavía */
