@@ -602,6 +602,7 @@ body{overflow-x:hidden;min-height:100dvh}
           </div>
           <div class="bar"><span id="bpFill"></span></div>
           <div style="font-size:12.5px;color:var(--muted);margin-top:8px" id="bpLeft"></div>
+          <div style="font-size:12.5px;font-weight:600;color:var(--accent-dk);margin-top:4px" id="bpDays"></div>
         </div>
       </div>
 
@@ -923,6 +924,22 @@ const availMet = (k,m)=> (balDecl(k)[m]||0) + incMet(k,m) - spentMet(k,m)
                          + trInMet(k,m) - trOutMet(k,m);
 const budTotal = k => Object.values(budOf(k)).reduce((s,n)=>s+(n||0),0);
 
+/* categorías que además se miden en "días" (cuántos días te alcanza lo que queda) */
+const DIAS_CATS = ["comida"];
+/* promedio = gasto de la categoría ÷ días distintos en que hubo gasto;
+   días = lo que queda del presupuesto ÷ ese promedio (null si aún no hay gastos) */
+function diasCat(k,c){
+  const porDia={};
+  txOf(k).filter(t=>t.type==="gasto"&&t.cat===c)
+         .forEach(t=>{ porDia[t.date]=(porDia[t.date]||0)+t.amount; });
+  const n=Object.keys(porDia).length, sp=spentCat(k,c);
+  if(!n||!(sp>0)) return null;
+  const avg=sp/n, lim=budOf(k)[c]||0;
+  return { avg, lim, dias: lim>0 ? Math.max(0,Math.floor((lim-sp)/avg+1e-9)) : null };
+}
+const diasTxt = d => d.dias===null ? "" :
+  d.dias===0 ? "no alcanza para otro día" : `≈ ${d.dias} ${d.dias===1?"día":"días"}`;
+
 /* =========================================================
    TECLADO NUMÉRICO PROPIO  (no dispara el teclado del sistema)
    ========================================================= */
@@ -1024,8 +1041,10 @@ function hintTx(){
   if(txType==="gasto"){
     const lim = budOf(k)[txCat]||0, sp = spentCat(k,txCat);
     const c = findIn(S.catsE,txCat);
+    const dd = DIAS_CATS.includes(txCat) && diasCat(k,txCat);
     el.textContent = lim>0
       ? `${c.name}: quedan ${S.currency} ${fmt(Math.max(0,lim-sp))} de ${S.currency} ${fmt(lim)} este mes`
+        + (dd && diasTxt(dd) ? ` · ${diasTxt(dd)}` : "")
       : `Saldo en ${metOf(txMet).name}: ${S.currency} ${fmt(availMet(k,txMet))}`;
   } else {
     el.textContent = `Saldo en ${metOf(txMet).name}: ${S.currency} ${fmt(availMet(k,txMet))}`;
@@ -1142,6 +1161,10 @@ function renderHome(){
     $("#bpLeft").textContent = g<=bt
       ? `Te quedan ${S.currency} ${fmt(bt-g)}`
       : `Te pasaste ${S.currency} ${fmt(g-bt)}`;
+    $("#bpDays").innerHTML = DIAS_CATS.map(id=>{
+      const c=findIn(S.catsE,id), d=c.id===id && diasCat(VM,id);
+      return d && diasTxt(d) ? `<div>${c.icon} ${esc(c.name)}: ${diasTxt(d)}</div>` : "";
+    }).join("");
   } else $("#budBlock").classList.add("hide");
 
   // filtros
@@ -1247,6 +1270,11 @@ function renderPlan(){
         <span class="row__s"><span>Gastado ${S.currency} ${fmt(sp)}</span>
           <span style="color:${sp>lim?"var(--coral-dk)":"var(--muted)"}">${sp>lim?"excedido "+fmt(sp-lim):"quedan "+fmt(lim-sp)}</span></span>`
         :`<span class="row__s"><span>Gastado ${S.currency} ${fmt(sp)}</span></span>`}
+        ${(()=>{ const d=DIAS_CATS.includes(c.id)&&diasCat(VM,c.id); if(!d) return "";
+          const t=diasTxt(d), prom=`prom. ${S.currency} ${fmt(d.avg)} por día`;
+          return t ? `<span class="row__s"><span style="font-weight:600;color:${d.dias===0?"var(--coral-dk)":"var(--accent-dk)"}">${t}</span>
+            <span>${prom}</span></span>`
+                   : `<span class="row__s"><span>${prom}</span></span>`; })()}
       </span></button>`;
   }).join("");
   pb.onclick = e=>{ const b=e.target.closest("[data-bud]"); if(!b) return;
