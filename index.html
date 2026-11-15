@@ -171,7 +171,8 @@ h1,h2,h3,h4,p{margin:0}
 .row__b{display:block;flex:1;min-width:0}
 .row__t{font-weight:600;font-size:14.5px;display:flex;justify-content:space-between;gap:8px}
 .row__v{font-family:var(--mono);font-weight:700;font-size:14.5px;white-space:nowrap}
-.row__s{font-size:12px;color:var(--muted);margin-top:5px;display:flex;justify-content:space-between}
+.row__s{font-size:12px;color:var(--muted);margin-top:5px;display:flex;justify-content:space-between;gap:10px}
+.row__s>span:last-child:not(:first-child){text-align:right}
 .row .bar{margin-top:6px}
 .row__set{font-size:12.5px;color:var(--accent-dk);font-weight:600}
 
@@ -637,7 +638,7 @@ body{overflow-x:hidden;min-height:100dvh}
         <h3 class="sec__t">Cuánto tengo este mes</h3>
         <div class="card" id="planBal"></div>
         <p style="font-size:12px;color:var(--muted);margin:9px 4px 0">
-          Declara cuánto tienes en cada método al empezar el mes. Los gastos se descuentan y los ingresos se suman.</p>
+          Cada método empieza el mes con lo que le quedó el mes anterior. Si no coincide con lo que de verdad tienes, tócalo y corrígelo. Los gastos se descuentan y los ingresos se suman.</p>
       </div>
 
       <div class="sec">
@@ -856,7 +857,9 @@ try{ const r=JSON.parse(localStorage.getItem(KEY)); S = (r&&r.txs)?r:DEF(); }cat
 // completar campos faltantes
 { const d=DEF(); for(const k in d) if(S[k]===undefined) S[k]=d[k];
   ["catsE","catsI","methods"].forEach(k=>{ if(!S[k]||!S[k].length) S[k]=d[k]; }); }
-const save = ()=>{ try{ localStorage.setItem(KEY,JSON.stringify(S)); }
+// cálculos que dependen de varios meses (saldo arrastrado); se vacía cuando cambian los datos
+let memo = {};
+const save = ()=>{ memo = {}; try{ localStorage.setItem(KEY,JSON.stringify(S)); }
   catch(e){ toast("No se pudo guardar (almacenamiento lleno)"); } };
 save();   // deja el estado fijo desde el primer arranque
 
@@ -921,9 +924,26 @@ const incMet   = (k,m)=> sum(txOf(k).filter(t=>t.type==="ingreso"&&t.method===m)
 const isTr     = t => t.type==="traspaso";
 const trOutMet = (k,m)=> sum(txOf(k).filter(t=>isTr(t)&&t.from===m));
 const trInMet  = (k,m)=> sum(txOf(k).filter(t=>isTr(t)&&t.to===m));
-// saldo disponible = declarado + ingresos - gastos + traspasos recibidos - traspasos enviados
-const availMet = (k,m)=> (balDecl(k)[m]||0) + incMet(k,m) - spentMet(k,m)
+// saldo disponible = inicial + ingresos - gastos + traspasos recibidos - traspasos enviados
+const availMet = (k,m)=> iniMet(k,m) + incMet(k,m) - spentMet(k,m)
                          + trInMet(k,m) - trOutMet(k,m);
+const declOf = (k,m) => (S.balances[k]||{})[m];       // undefined si no se declaró
+const conDecl = () => Object.keys(S.balances).filter(k=>Object.keys(S.balances[k]).length);
+function primerMes(){                                 // primer mes con movimientos o saldo declarado
+  if(memo.primer===undefined){ const ks=S.txs.map(t=>mk(t.date)).concat(conDecl()).sort();
+    memo.primer = ks[0] || null; }
+  return memo.primer;
+}
+// lo que quedó en el método al cerrar el mes anterior, en céntimos exactos (null si antes no hay datos)
+const vieneDe = (k,m) => { const p=prevM(k), pm=primerMes();
+  return pm && p>=pm ? Math.round(availMet(p,m)*100)/100 : null; };
+/* saldo con el que empieza el mes: lo declarado o, si no se declaró, lo que vino del mes anterior */
+function iniMet(k,m){
+  const dec=declOf(k,m); if(dec!==undefined) return dec;
+  const key="ini|"+k+"|"+m;
+  if(memo[key]===undefined) memo[key]=vieneDe(k,m)||0;
+  return memo[key];
+}
 const budTotal = k => Object.values(budOf(k)).reduce((s,n)=>s+(n||0),0);
 
 /* categorías que además se miden en "días" (cuántos días te alcanza lo que queda) */
@@ -939,8 +959,13 @@ function costoDia(k,c){
   return { avg: fijo||sp/n, fijo: fijo>0 };
 }
 const diasIds = () => DIAS_CATS.filter(id=>S.catsE.some(c=>c.id===id));
-// sin saldos declarados ni ingresos en el mes no se sabe cuánta plata hay
-const hayPlata  = k => S.methods.some(m=>balDecl(k)[m.id]!==undefined) || incM(k)>0;
+/* se sabe cuánta plata hay desde el primer mes con saldo declarado o ingresos
+   (los meses siguientes la arrastran); antes de eso, no */
+function hayPlata(k){
+  if(memo.plata===undefined){ const ks=S.txs.filter(t=>t.type==="ingreso").map(t=>mk(t.date)).concat(conDecl()).sort();
+    memo.plata = ks[0] || null; }
+  return !!memo.plata && k>=memo.plata;
+}
 const dispTotal = k => S.methods.reduce((s,m)=>s+availMet(k,m.id),0);
 // si lo que queda del presupuesto es más que la plata que de verdad hay, devuelve esa plata
 const soloTienes = (k,resta) => { if(!hayPlata(k)) return null;
@@ -1158,6 +1183,15 @@ function askAmount(title, sub, current, commit){
 }
 $("#aSave").onclick = ()=>{ aCommit && aCommit(Math.round(aPad.val()*100)/100);
   save(); closeSheet(shAmt); renderAll(); };
+/* declarar el saldo de un método en el mes visible. Parte de lo que vino del mes anterior;
+   si se guarda ese mismo monto, queda sin declarar y sigue los cambios del mes anterior */
+function pedirSaldo(m){
+  const dec=declOf(VM,m.id), vi=vieneDe(VM,m.id);
+  askAmount(`Saldo en ${m.name}`,
+    vi!==null ? `Del mes anterior: ${S.currency} ${fmt(vi)}` : cap(mName(VM)),
+    dec!==undefined ? dec : (vi||0),
+    v=>{ if(vi!==null && Math.abs(v-vi)<0.005) delete balDecl(VM)[m.id]; else balDecl(VM)[m.id]=v; });
+}
 
 /* =========================================================
    RENDER — INICIO
@@ -1172,17 +1206,16 @@ function renderHome(){
 
   // saldos por método
   $("#balRow").innerHTML = S.methods.map(m=>{
-    const av=availMet(VM,m.id), dec=balDecl(VM)[m.id];
+    const av=availMet(VM,m.id), dec=declOf(VM,m.id), vi=vieneDe(VM,m.id);
     return `<button class="mcard" data-bal="${m.id}">
       <div class="mcard__h"><span class="mcard__i" style="background:${rgba(m.color,.18)}">${m.icon}</span>${esc(m.name)}</div>
       <div class="mcard__v" style="color:${av<0?"var(--coral-dk)":"var(--ink)"}">${S.currency} ${fmt(av)}</div>
-      <div class="mcard__s">${dec===undefined?"toca para declarar":"de "+S.currency+" "+fmt(dec)}</div>
+      <div class="mcard__s">${dec!==undefined ? "de "+S.currency+" "+fmt(dec)
+        : vi ? `viene de ${MES3[+prevM(VM).slice(5)-1]}: ${fmt(vi)}` : "toca para declarar"}</div>
     </button>`;
   }).join("");
   $("#balRow").onclick = e=>{ const b=e.target.closest("[data-bal]"); if(!b) return;
-    const m=metOf(b.dataset.bal);
-    askAmount(`Saldo en ${m.name}`, cap(mName(VM)), balDecl(VM)[m.id]||0,
-      v=>{ balDecl(VM)[m.id]=v; }); };
+    pedirSaldo(metOf(b.dataset.bal)); };
 
   // presupuesto total
   const bt=budTotal(VM);
@@ -1283,7 +1316,7 @@ function dayLbl(iso){
 function renderPlan(){
   const bx=$("#planBal");
   bx.innerHTML = S.methods.map(m=>{
-    const dec=balDecl(VM)[m.id], av=availMet(VM,m.id);
+    const dec=declOf(VM,m.id), av=availMet(VM,m.id), vi=vieneDe(VM,m.id);
     const usado = spentMet(VM,m.id), entr = incMet(VM,m.id);
     const neto  = trInMet(VM,m.id) - trOutMet(VM,m.id);
     const trTxt = neto ? `<span style="color:var(--violet)">⇄ ${neto>0?"+":"−"}${fmt(Math.abs(neto))}</span>` : "";
@@ -1293,13 +1326,14 @@ function renderPlan(){
         <span class="row__t"><span>${esc(m.name)}</span>
           <span class="row__v" style="color:${av<0?"var(--coral-dk)":"var(--ink)"}">${S.currency} ${fmt(av)}</span></span>
         <span class="row__s">
-          <span>${dec===undefined?'<span class="row__set">Declarar saldo</span>':"Declaraste "+S.currency+" "+fmt(dec)}</span>
+          <span style="white-space:nowrap">${dec!==undefined ? "Declaraste "+S.currency+" "+fmt(dec)
+            : vi ? `Viene de ${MES3[+prevM(VM).slice(5)-1]}: ${fmt(vi)}`
+            : '<span class="row__set">Declarar saldo</span>'}</span>
           <span>${entr?"+"+fmt(entr)+"  ":""}${usado?"−"+fmt(usado)+"  ":""}${trTxt}</span></span>
       </span></button>`;
   }).join("");
   bx.onclick = e=>{ const b=e.target.closest("[data-bal]"); if(!b) return;
-    const m=metOf(b.dataset.bal);
-    askAmount(`Saldo en ${m.name}`, cap(mName(VM)), balDecl(VM)[m.id]||0, v=>{ balDecl(VM)[m.id]=v; }); };
+    pedirSaldo(metOf(b.dataset.bal)); };
 
   const bud=budOf(VM), pb=$("#planBud");
   pb.innerHTML = S.catsE.map(c=>{
@@ -1683,6 +1717,7 @@ $$(".nav [data-v]").forEach(b=>b.onclick=()=>{
 
 /* ---------- render global ---------- */
 function renderAll(){
+  memo = {};
   ensureBudget(VM);
   $$(".mLabel").forEach(e=>e.textContent=mLabel(VM));
   $$("[data-cur]").forEach(e=>e.textContent=S.currency);
