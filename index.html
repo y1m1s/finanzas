@@ -603,6 +603,7 @@ body{overflow-x:hidden;min-height:100dvh}
           <div class="bar"><span id="bpFill"></span></div>
           <div style="font-size:12.5px;color:var(--muted);margin-top:8px" id="bpLeft"></div>
           <div style="font-size:12.5px;font-weight:600;color:var(--accent-dk);margin-top:4px" id="bpDays"></div>
+          <div class="hide" style="font-size:12.5px;font-weight:600;color:var(--coral-dk);background:var(--coral-soft);border-radius:var(--r-sm);padding:9px 11px;margin-top:10px" id="bpOver"></div>
         </div>
       </div>
 
@@ -928,16 +929,39 @@ const budTotal = k => Object.values(budOf(k)).reduce((s,n)=>s+(n||0),0);
 /* categorías que además se miden en "días" (cuántos días te alcanza lo que queda) */
 const DIAS_CATS = ["comida","pasajes"];
 /* costo por día = el que el usuario fijó (S.dayCost) o, si no, el promedio de la categoría
-   (gasto ÷ días distintos con gasto); días = lo que queda del presupuesto ÷ ese costo.
-   null si no hay costo fijo ni gastos todavía */
-function diasCat(k,c){
+   (gasto ÷ días distintos con gasto). null si no hay costo fijo ni gastos todavía */
+function costoDia(k,c){
   const porDia={};
   txOf(k).filter(t=>t.type==="gasto"&&t.cat===c)
          .forEach(t=>{ porDia[t.date]=(porDia[t.date]||0)+t.amount; });
   const n=Object.keys(porDia).length, sp=spentCat(k,c), fijo=S.dayCost[c]||0;
   if(!fijo && (!n||!(sp>0))) return null;
-  const avg=fijo||sp/n, lim=budOf(k)[c]||0;
-  return { avg, fijo:fijo>0, lim, dias: lim>0 ? Math.max(0,Math.floor((lim-sp)/avg+1e-9)) : null };
+  return { avg: fijo||sp/n, fijo: fijo>0 };
+}
+const diasIds = () => DIAS_CATS.filter(id=>S.catsE.some(c=>c.id===id));
+/* plata libre para el día a día = saldo disponible de todos los métodos
+   − lo que aún falta gastar en las otras categorías con presupuesto.
+   Alcanza para libre ÷ (suma de los costos por día de las categorías en días).
+   null si el mes no tiene saldos declarados ni ingresos: no se sabe cuánta plata hay */
+function plataDia(k){
+  const hayPlata = S.methods.some(m=>balDecl(k)[m.id]!==undefined) || incM(k)>0;
+  const costo = diasIds().reduce((s,id)=>s+((costoDia(k,id)||{}).avg||0),0);
+  if(!hayPlata || !(costo>0)) return null;
+  const bud=budOf(k), disp=S.methods.reduce((s,m)=>s+availMet(k,m.id),0);
+  const reservado = S.catsE.filter(c=>!DIAS_CATS.includes(c.id))
+    .reduce((s,c)=>s+Math.max(0,(bud[c.id]||0)-spentCat(k,c.id)),0);
+  const libre = disp-reservado;
+  return { disp, reservado, libre, costo, dias: Math.max(0,Math.floor(libre/costo+1e-9)) };
+}
+/* días de una categoría: lo que da su presupuesto, pero nunca más de lo que da la plata libre.
+   porSaldo = el saldo real es lo que limita (te pasaste en otra cosa o no te queda plata) */
+function diasCat(k,c){
+  const cd=costoDia(k,c); if(!cd) return null;
+  const lim=budOf(k)[c]||0, sp=spentCat(k,c);
+  const diasPres = lim>0 ? Math.max(0,Math.floor((lim-sp)/cd.avg+1e-9)) : null;
+  const pl=plataDia(k);
+  const porSaldo = !!pl && (diasPres===null || pl.dias<diasPres);
+  return { ...cd, lim, diasPres, porSaldo, dias: porSaldo ? pl.dias : diasPres };
 }
 const diasTxt = d => d.dias===null ? "" :
   d.dias===0 ? "no alcanza para otro día" : `≈ ${d.dias} ${d.dias===1?"día":"días"}`;
@@ -1046,7 +1070,7 @@ function hintTx(){
     const dd = DIAS_CATS.includes(txCat) && diasCat(k,txCat);
     el.textContent = lim>0
       ? `${c.name}: quedan ${S.currency} ${fmt(Math.max(0,lim-sp))} de ${S.currency} ${fmt(lim)} este mes`
-        + (dd && diasTxt(dd) ? ` · ${diasTxt(dd)}` : "")
+        + (dd && diasTxt(dd) ? ` · ${diasTxt(dd)}${dd.porSaldo?" por tu saldo":""}` : "")
       : `Saldo en ${metOf(txMet).name}: ${S.currency} ${fmt(availMet(k,txMet))}`;
   } else {
     el.textContent = `Saldo en ${metOf(txMet).name}: ${S.currency} ${fmt(availMet(k,txMet))}`;
@@ -1161,12 +1185,23 @@ function renderHome(){
     const p=Math.min(100,g/bt*100), f=$("#bpFill");
     f.style.width=p+"%"; f.className = g>bt?"over":(p>=80?"warn":"");
     $("#bpLeft").textContent = g<=bt
-      ? `Te quedan ${S.currency} ${fmt(bt-g)}`
-      : `Te pasaste ${S.currency} ${fmt(g-bt)}`;
-    $("#bpDays").innerHTML = DIAS_CATS.map(id=>{
-      const c=findIn(S.catsE,id), d=c.id===id && diasCat(VM,id);
-      return d && diasTxt(d) ? `<div>${c.icon} ${esc(c.name)}: ${diasTxt(d)}</div>` : "";
-    }).join("");
+      ? `Te quedan ${S.currency} ${fmt(bt-g)} del presupuesto`
+      : `Te pasaste ${S.currency} ${fmt(g-bt)} del presupuesto`;
+    const dl = diasIds().map(id=>({c:findIn(S.catsE,id), d:diasCat(VM,id)})).filter(x=>x.d&&diasTxt(x.d));
+    const pl = dl.some(x=>x.d.porSaldo) && plataDia(VM);
+    $("#bpDays").innerHTML = dl.map(({c,d})=>
+        `<div style="${d.porSaldo?"color:var(--coral-dk)":""}">${c.icon} ${esc(c.name)}: ${diasTxt(d)}${d.porSaldo?" (por tu saldo)":""}</div>`).join("")
+      + (pl ? `<div style="font-weight:400;color:var(--muted);margin-top:2px">Libre para el día a día: ${S.currency} ${fmt(Math.max(0,pl.libre))}${
+          pl.reservado>0?` (saldo ${fmt(pl.disp)} − ${fmt(pl.reservado)} reservado para otras categorías)`:""}</div>` : "");
+    // categorías excedidas: ese exceso sale del resto de la plata
+    const bud=budOf(VM);
+    const exc = S.catsE.map(c=>({c, d:spentCat(VM,c.id)-(bud[c.id]||0)})).filter(x=>(bud[x.c.id]||0)>0 && x.d>0.004)
+                     .sort((a,b)=>b.d-a.d);
+    const ob=$("#bpOver");
+    ob.classList.toggle("hide", !exc.length);
+    ob.innerHTML = exc.map(({c,d})=>`<div>⚠️ Te pasaste ${S.currency} ${fmt(d)} en ${esc(c.name)}</div>`).join("")
+      + (exc.length ? `<div style="font-weight:400;margin-top:3px">Ese exceso sale del resto de tu plata${
+          dl.length?`: por eso te alcanzan menos días de ${dl.map(x=>esc(x.c.name.toLowerCase())).join(" y ")}`:""}.</div>` : "");
   } else $("#budBlock").classList.add("hide");
 
   // filtros
@@ -1275,9 +1310,13 @@ function renderPlan(){
         ${(()=>{ const d=DIAS_CATS.includes(c.id)&&diasCat(VM,c.id); if(!d) return "";
           const t=diasTxt(d), prom = d.fijo ? `${S.currency} ${fmt(d.avg)} por día (fijo)`
                                             : `prom. ${S.currency} ${fmt(d.avg)} por día`;
-          return t ? `<span class="row__s"><span style="font-weight:600;color:${d.dias===0?"var(--coral-dk)":"var(--accent-dk)"}">${t}</span>
+          const nota = !d.porSaldo ? "" : d.diasPres!==null
+            ? `Limitado por tu saldo · tu presupuesto daría ${diasTxt({dias:d.diasPres})}`
+            : "Según tu saldo disponible";
+          return (t ? `<span class="row__s"><span style="font-weight:600;color:${d.dias===0||d.porSaldo?"var(--coral-dk)":"var(--accent-dk)"}">${t}</span>
             <span>${prom}</span></span>`
-                   : `<span class="row__s"><span>${prom}</span></span>`; })()}
+                    : `<span class="row__s"><span>${prom}</span></span>`)
+            + (nota ? `<span class="row__s"><span style="color:var(--coral-dk)">${nota}</span></span>` : ""); })()}
       </span></button>${DIAS_CATS.includes(c.id) ? diaRow(c) : ""}`;
   }).join("");
   pb.onclick = e=>{
