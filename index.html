@@ -939,15 +939,20 @@ function costoDia(k,c){
   return { avg: fijo||sp/n, fijo: fijo>0 };
 }
 const diasIds = () => DIAS_CATS.filter(id=>S.catsE.some(c=>c.id===id));
+// sin saldos declarados ni ingresos en el mes no se sabe cuánta plata hay
+const hayPlata  = k => S.methods.some(m=>balDecl(k)[m.id]!==undefined) || incM(k)>0;
+const dispTotal = k => S.methods.reduce((s,m)=>s+availMet(k,m.id),0);
+// si lo que queda del presupuesto es más que la plata que de verdad hay, devuelve esa plata
+const soloTienes = (k,resta) => { if(!hayPlata(k)) return null;
+  const d=dispTotal(k); return d<resta-0.004 ? Math.max(0,d) : null; };
 /* plata libre para el día a día = saldo disponible de todos los métodos
    − lo que aún falta gastar en las otras categorías con presupuesto.
    Alcanza para libre ÷ (suma de los costos por día de las categorías en días).
-   null si el mes no tiene saldos declarados ni ingresos: no se sabe cuánta plata hay */
+   null si no se sabe cuánta plata hay o no hay costo por día */
 function plataDia(k){
-  const hayPlata = S.methods.some(m=>balDecl(k)[m.id]!==undefined) || incM(k)>0;
   const costo = diasIds().reduce((s,id)=>s+((costoDia(k,id)||{}).avg||0),0);
-  if(!hayPlata || !(costo>0)) return null;
-  const bud=budOf(k), disp=S.methods.reduce((s,m)=>s+availMet(k,m.id),0);
+  if(!hayPlata(k) || !(costo>0)) return null;
+  const bud=budOf(k), disp=dispTotal(k);
   const reservado = S.catsE.filter(c=>!DIAS_CATS.includes(c.id))
     .reduce((s,c)=>s+Math.max(0,(bud[c.id]||0)-spentCat(k,c.id)),0);
   const libre = disp-reservado;
@@ -1068,9 +1073,12 @@ function hintTx(){
     const lim = budOf(k)[txCat]||0, sp = spentCat(k,txCat);
     const c = findIn(S.catsE,txCat);
     const dd = DIAS_CATS.includes(txCat) && diasCat(k,txCat);
+    const resta = Math.max(0,lim-sp), solo = soloTienes(k,resta);
     el.textContent = lim>0
-      ? `${c.name}: quedan ${S.currency} ${fmt(Math.max(0,lim-sp))} de ${S.currency} ${fmt(lim)} este mes`
-        + (dd && diasTxt(dd) ? ` · ${diasTxt(dd)}${dd.porSaldo?" por tu saldo":""}` : "")
+      ? (sp>lim ? `${c.name}: ya te pasaste ${S.currency} ${fmt(sp-lim)} de los ${S.currency} ${fmt(lim)} de este mes`
+                : `${c.name}: quedan ${S.currency} ${fmt(resta)} de ${S.currency} ${fmt(lim)} este mes`)
+        + (dd && diasTxt(dd) ? ` · ${diasTxt(dd)}${dd.porSaldo?" por tu saldo":""}`
+           : solo!==null ? ` · pero solo tienes ${S.currency} ${fmt(solo)}` : "")
       : `Saldo en ${metOf(txMet).name}: ${S.currency} ${fmt(availMet(k,txMet))}`;
   } else {
     el.textContent = `Saldo en ${metOf(txMet).name}: ${S.currency} ${fmt(availMet(k,txMet))}`;
@@ -1307,6 +1315,9 @@ function renderPlan(){
         <span class="row__s"><span>Gastado ${S.currency} ${fmt(sp)}</span>
           <span style="color:${sp>lim?"var(--coral-dk)":"var(--muted)"}">${sp>lim?"excedido "+fmt(sp-lim):"quedan "+fmt(lim-sp)}</span></span>`
         :`<span class="row__s"><span>Gastado ${S.currency} ${fmt(sp)}</span></span>`}
+        ${(()=>{ if(DIAS_CATS.includes(c.id) || !(lim>sp)) return "";
+          const solo=soloTienes(VM,lim-sp); if(solo===null) return "";
+          return `<span class="row__s"><span style="color:var(--coral-dk)">Pero solo tienes ${S.currency} ${fmt(solo)} en total</span></span>`; })()}
         ${(()=>{ const d=DIAS_CATS.includes(c.id)&&diasCat(VM,c.id); if(!d) return "";
           const t=diasTxt(d), prom = d.fijo ? `${S.currency} ${fmt(d.avg)} por día (fijo)`
                                             : `prom. ${S.currency} ${fmt(d.avg)} por día`;
@@ -1356,25 +1367,40 @@ function renderClose(){
                        .filter(r=>r.lim>0||r.sp>0);
   const cumplidas = filas.filter(r=>r.lim>0 && r.sp<=r.lim).length;
   const conLimite = filas.filter(r=>r.lim>0).length;
+  // mientras el mes sigue abierto lo que no se gastó "queda"; al cerrarlo, "sobró"
+  const quedaTxt = cerrado ? "sobró" : "queda";
+  // lo que en el papel queda en las categorías vs la plata que de verdad hay
+  const papel = filas.reduce((s,r)=>s+(r.lim>0?Math.max(0,r.lim-r.sp):0),0);
+  const conPlata = hayPlata(VM), disp = dispTotal(VM);
 
   box.innerHTML=`
     <div class="close__top ${ok?"ok":"bad"}">
       <div class="close__lbl">${cerrado?"Mes cerrado":"Así vas este mes"}</div>
-      <div class="close__big">${ok?"Te sobró":"Te pasaste"} ${S.currency} ${fmt(Math.abs(dif))}</div>
-      <div class="close__sub">Presupuestaste ${S.currency} ${fmt(bt)} · gastaste ${S.currency} ${fmt(sp)}</div>
+      <div class="close__big">${ok?(cerrado?"Te sobró":"Te quedan"):"Te pasaste"} ${S.currency} ${fmt(Math.abs(dif))}</div>
+      <div class="close__sub">del presupuesto: planeaste ${S.currency} ${fmt(bt)} · gastaste ${S.currency} ${fmt(sp)}</div>
       <div class="close__sub">Cumpliste ${cumplidas} de ${conLimite} categorías</div>
     </div>
+    ${conPlata ? `<div class="row" style="cursor:default">
+      <span class="dot" style="width:30px;height:30px;border-radius:10px;font-size:14px;background:${rgba("#0ea47a",.16)}">💰</span>
+      <span class="row__b"><span class="row__t">
+        <span>Plata que de verdad ${cerrado?"te quedó":"te queda"}</span>
+        <span class="row__v ${disp<0?"neg":""}">${S.currency} ${fmt(disp)}</span></span>
+        ${papel>disp+0.004 ? `<span class="row__s"><span style="color:var(--coral-dk)">En el papel tus categorías tienen ${S.currency} ${fmt(papel)} sin gastar, pero solo ${cerrado?"te quedó":"tienes"} ${S.currency} ${fmt(Math.max(0,disp))}: lo que gastaste de más salió de ahí.</span></span>` : ""}
+      </span></div>` : ""}
     ${filas.map(r=>{
       const sinLim=r.lim===0, bien=!sinLim&&r.sp<=r.lim;
       const d=r.lim-r.sp;
+      const dd = DIAS_CATS.includes(r.c.id) && diasCat(VM,r.c.id);
+      const dt = dd && diasTxt(dd);
       return `<div class="row" style="cursor:default">
         <span class="dot" style="width:30px;height:30px;border-radius:10px;font-size:14px;background:${rgba(r.c.color,.16)}">${r.c.icon}</span>
         <span class="row__b"><span class="row__t">
           <span>${esc(r.c.name)}</span>
           <span class="row__v ${sinLim?"":(bien?"pos":"neg")}">${
             sinLim ? `<span style="color:var(--faint);font-weight:500">sin tope</span>`
-                   : (bien?"sobró ":"excedió ")+fmt(Math.abs(d))}</span></span>
-          <span class="row__s"><span>${S.currency} ${fmt(r.sp)}${r.lim?" de "+S.currency+" "+fmt(r.lim):""}</span></span>
+                   : (bien?quedaTxt+" ":"excedió ")+fmt(Math.abs(d))}</span></span>
+          <span class="row__s"><span>${S.currency} ${fmt(r.sp)}${r.lim?" de "+S.currency+" "+fmt(r.lim):""}</span>
+            ${dt && !cerrado ? `<span style="font-weight:600;color:${dd.porSaldo||dd.dias===0?"var(--coral-dk)":"var(--accent-dk)"}">${dt}${dd.porSaldo?" por tu saldo":""}</span>` : ""}</span>
         </span></div>`; }).join("")}
     <div style="padding:13px 14px">
       ${cerrado
@@ -1388,7 +1414,7 @@ function renderClose(){
   if(cb) cb.onclick=()=>{
     if(!confirm(`¿Cerrar ${mName(VM)}?\n\nSe guarda el resultado de cumplimiento. Puedes reabrirlo cuando quieras.`)) return;
     S.closed[VM]={ts:Date.now(),bud:bt,spent:sp}; save(); renderAll();
-    toast(ok?`Cerrado. Te sobró ${S.currency} ${fmt(dif)}`:`Cerrado. Te pasaste ${S.currency} ${fmt(-dif)}`);
+    toast(ok?`Cerrado. Te sobró ${S.currency} ${fmt(dif)} del presupuesto`:`Cerrado. Te pasaste ${S.currency} ${fmt(-dif)} del presupuesto`);
   };
   const rb=$("#reopenM");
   if(rb) rb.onclick=()=>{ delete S.closed[VM]; save(); renderAll(); toast("Mes reabierto"); };
