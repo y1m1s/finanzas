@@ -638,7 +638,7 @@ body{overflow-x:hidden;min-height:100dvh}
         <h3 class="sec__t">Cuánto tengo este mes</h3>
         <div class="card" id="planBal"></div>
         <p style="font-size:12px;color:var(--muted);margin:9px 4px 0">
-          Cada método empieza el mes con lo que le quedó el mes anterior. Si no coincide con lo que de verdad tienes, tócalo y corrígelo. Los gastos se descuentan y los ingresos se suman.</p>
+          Cada método empieza el mes con lo que le quedó el mes anterior, salvo que hayas cerrado ese mes (entonces empieza en 0). Tócalo y pon lo que de verdad tienes para confirmarlo. Los gastos se descuentan y los ingresos se suman.</p>
       </div>
 
       <div class="sec">
@@ -950,9 +950,19 @@ function primerMes(){                                 // primer mes con movimien
     memo.primer = ks[0] || null; }
   return memo.primer;
 }
-// lo que quedó en el método al cerrar el mes anterior, en céntimos exactos (null si antes no hay datos)
+/* lo que quedó en el método al terminar el mes anterior, en céntimos exactos. null si antes
+   no hay datos o si el mes anterior se cerró: lo que sobró se fue a otro lado (ahorros) */
 const vieneDe = (k,m) => { const p=prevM(k), pm=primerMes();
-  return pm && p>=pm ? Math.round(availMet(p,m)*100)/100 : null; };
+  return pm && p>=pm && !S.closed[p] ? Math.round(availMet(p,m)*100)/100 : null; };
+// cerrar un mes: se guarda su resultado y lo que sobró ya no pasa al mes siguiente
+function cerrarMes(k){
+  const sob = hayPlata(k) ? dispTotal(k) : null;
+  if(!confirm(`¿Cerrar ${mName(k)}?\n\n`
+    + (sob!==null ? `Lo que te sobró (${S.currency} ${fmt(sob)}) no pasa a ${mName(nextM(k))}: cuenta como que se fue a tus ahorros u otro lado.\n\n` : "")
+    + "Puedes reabrirlo cuando quieras.")) return false;
+  S.closed[k]={ts:Date.now(), bud:budTotal(k), spent:spentM(k), sobrante:sob};
+  save(); renderAll(); return true;
+}
 /* saldo con el que empieza el mes: lo declarado o, si no se declaró, lo que vino del mes anterior */
 function iniMet(k,m){
   const dec=declOf(k,m); if(dec!==undefined) return dec;
@@ -1007,7 +1017,19 @@ function diasCat(k,c){
   const diasPres = lim>0 ? Math.max(0,Math.floor((lim-sp)/cd.avg+1e-9)) : null;
   const pl=plataDia(k);
   const porSaldo = !!pl && (diasPres===null || pl.dias<diasPres);
-  return { ...cd, lim, diasPres, porSaldo, dias: porSaldo ? pl.dias : diasPres };
+  return { ...cd, lim, diasPres, diasSaldo: pl ? pl.dias : null, porSaldo, dias: porSaldo ? pl.dias : diasPres };
+}
+// qué limita los días: el saldo, el presupuesto o (sin datos de plata) nada que aclarar
+const porQue = d => d.porSaldo ? "por tu saldo" : d.diasSaldo!==null && d.diasPres!==null ? "por tu presupuesto" : "";
+/* de dónde sale la plata del día a día: saldo de cada método − lo reservado.
+   arr = el saldo viene del mes anterior sin que se haya confirmado este mes */
+function plataDetalle(k,pl){
+  const ms = S.methods.map(m=>({m, v:availMet(k,m.id), arr: declOf(k,m.id)===undefined && !!vieneDe(k,m.id)}))
+                      .filter(x=>Math.abs(x.v)>0.004);
+  const partes = ms.map(x=>`${esc(x.m.name)} ${fmt(x.v)}${x.arr?"*":""}`).join(" + ");
+  return { txt: `Para el día a día: ${S.currency} ${fmt(Math.max(0,pl.libre))}`
+             + (partes ? ` (${partes}${pl.reservado>0?` − ${fmt(pl.reservado)} reservado para otras categorías`:""})` : ""),
+           sinConfirmar: ms.filter(x=>x.arr).map(x=>esc(x.m.name)) };
 }
 const diasTxt = d => d.dias===null ? "" :
   d.dias===0 ? "no alcanza para otro día" : `≈ ${d.dias} ${d.dias===1?"día":"días"}`;
@@ -1118,7 +1140,7 @@ function hintTx(){
     el.textContent = lim>0
       ? (sp>lim ? `${c.name}: ya te pasaste ${S.currency} ${fmt(sp-lim)} de los ${S.currency} ${fmt(lim)} de este mes`
                 : `${c.name}: quedan ${S.currency} ${fmt(resta)} de ${S.currency} ${fmt(lim)} este mes`)
-        + (dd && diasTxt(dd) ? ` · ${diasTxt(dd)}${dd.porSaldo?" por tu saldo":""}`
+        + (dd && diasTxt(dd) ? ` · ${diasTxt(dd)}${porQue(dd)?" "+porQue(dd):""}`
            : solo!==null ? ` · pero solo tienes ${S.currency} ${fmt(solo)}` : "")
       : `Saldo en ${metOf(txMet).name}: ${S.currency} ${fmt(availMet(k,txMet))}`;
   } else {
@@ -1199,14 +1221,15 @@ function askAmount(title, sub, current, commit){
 }
 $("#aSave").onclick = ()=>{ aCommit && aCommit(Math.round(aPad.val()*100)/100);
   save(); closeSheet(shAmt); renderAll(); };
-/* declarar el saldo de un método en el mes visible. Parte de lo que vino del mes anterior;
-   si se guarda ese mismo monto, queda sin declarar y sigue los cambios del mes anterior */
+/* confirmar cuánto hay de verdad en un método (hoy, o al cierre si es otro mes).
+   Se guarda como saldo inicial del mes = lo que hay − los movimientos del mes,
+   así los gastos que se anoten después siguen descontándose. Queda confirmado aunque no cambie */
 function pedirSaldo(m){
-  const dec=declOf(VM,m.id), vi=vieneDe(VM,m.id);
-  askAmount(`Saldo en ${m.name}`,
-    vi!==null ? `Del mes anterior: ${S.currency} ${fmt(vi)}` : cap(mName(VM)),
-    dec!==undefined ? dec : (vi||0),
-    v=>{ if(vi!==null && Math.abs(v-vi)<0.005) delete balDecl(VM)[m.id]; else balDecl(VM)[m.id]=v; });
+  const av=availMet(VM,m.id), flujo=av-iniMet(VM,m.id);
+  askAmount(`¿Cuánto tienes en ${m.name}?`,
+    VM===mk(today()) ? "Lo que tienes hoy, de verdad" : `Al cierre de ${mName(VM)}`,
+    Math.round(av*100)/100,
+    v=>{ balDecl(VM)[m.id]=Math.round((v-flujo)*100)/100; });
 }
 
 /* =========================================================
@@ -1227,8 +1250,8 @@ function renderHome(){
     return `<button class="mcard" data-bal="${m.id}">
       <div class="mcard__h"><span class="mcard__i" style="background:${rgba(m.color,.18)}">${m.icon}</span>${esc(m.name)}</div>
       <div class="mcard__v" style="color:${av<0?"var(--coral-dk)":"var(--ink)"}">${S.currency} ${fmt(av)}</div>
-      <div class="mcard__s">${dec!==undefined ? "de "+S.currency+" "+fmt(dec)
-        : vi ? `viene de ${MES3[+prevM(VM).slice(5)-1]}: ${fmt(vi)}` : "toca para declarar"}</div>
+      <div class="mcard__s">${dec!==undefined ? "✓ confirmado"
+        : vi ? `<span style="color:var(--coral-dk)">viene de ${MES3[+prevM(VM).slice(5)-1]} · confirmar</span>` : "toca para declarar"}</div>
     </button>`;
   }).join("");
   $("#balRow").onclick = e=>{ const b=e.target.closest("[data-bal]"); if(!b) return;
@@ -1246,12 +1269,18 @@ function renderHome(){
       ? `Te quedan ${S.currency} ${fmt(bt-g)} del presupuesto`
       : `Te pasaste ${S.currency} ${fmt(g-bt)} del presupuesto`;
     const dl = diasIds().map(id=>({c:findIn(S.catsE,id), d:diasCat(VM,id)})).filter(x=>x.d&&diasTxt(x.d));
-    const pl = dl.some(x=>x.d.porSaldo) && plataDia(VM);
+    const pl = dl.length && plataDia(VM), pd = pl && plataDetalle(VM,pl);
     $("#bpDays").innerHTML = dl.map(({c,d})=>
-        `<div style="${d.porSaldo?"color:var(--coral-dk)":""}">${c.icon} ${esc(c.name)}: ${diasTxt(d)}${d.porSaldo?" (por tu saldo)":""}</div>`).join("")
-      + (pl ? `<div style="font-weight:400;color:var(--muted);margin-top:2px">Libre para el día a día: ${S.currency} ${fmt(Math.max(0,pl.libre))}${
-          pl.reservado>0?` (saldo ${fmt(pl.disp)} − ${fmt(pl.reservado)} reservado para otras categorías)`:""}</div>` : "")
+        `<div style="${d.porSaldo?"color:var(--coral-dk)":""}">${c.icon} ${esc(c.name)}: ${diasTxt(d)}${porQue(d)?` (${porQue(d)})`:""}</div>`).join("")
+      + (pd ? `<div style="font-weight:400;color:var(--muted);margin-top:2px">${pd.txt}</div>`
+          + (pd.sinConfirmar.length ? (()=>{ const pm=MES[+prevM(VM).slice(5)-1];
+              return `<div style="font-weight:400;color:var(--coral-dk)">* Viene de ${pm} sin confirmar. Si ese sobrante se fue a tus ahorros, cierra ${pm} y deja de sumarse. Si lo tienes pero es otro monto, toca ${pd.sinConfirmar.join(" o ")} arriba y corrígelo.</div>
+                <button class="chip" id="closePrev" style="display:inline-flex;margin-top:7px">Cerrar ${pm}</button>`; })() : "")
+        : "")
       + cobroTxt(dl);
+    const cp=$("#closePrev");
+    if(cp) cp.onclick=()=>{ const p=prevM(VM);
+      if(cerrarMes(p)) toast(`${cap(MES[+p.slice(5)-1])} cerrado: su sobrante ya no se suma`); };
     // categorías excedidas: ese exceso sale del resto de la plata
     const bud=budOf(VM);
     const exc = S.catsE.map(c=>({c, d:spentCat(VM,c.id)-(bud[c.id]||0)})).filter(x=>(bud[x.c.id]||0)>0 && x.d>0.004)
@@ -1307,9 +1336,13 @@ function cobroTxt(dl){
   const pc=proxCobro(), hasta = S.payDay>1 ? `tu cobro (${pc.fecha})` : `fin de mes`;
   const pl=plataDia(VM);
   const falta = pl ? pc.dias*pl.costo - Math.max(0,pl.libre) : 0;
+  // categorías que no llegan al cobro (por saldo o por presupuesto)
+  const corto = dl.filter(x=>x.d.dias<pc.dias);
   return `<div style="font-weight:400;color:var(--muted);margin-top:6px">📅 Faltan ${pc.dias} ${pc.dias===1?"día":"días"} para ${hasta}</div>`
-    + (!pl ? "" : falta>0.004
+    + (falta>0.004
       ? `<div style="color:var(--coral-dk)">No te alcanza hasta ${hasta}: te faltan unos ${S.currency} ${fmt(falta)}</div>`
+      : corto.length
+      ? `<div style="color:var(--coral-dk)">Tu presupuesto no llega hasta ${hasta}: ${corto.map(x=>`${esc(x.c.name.toLowerCase())} ${diasTxt(x.d)}`).join(", ")}</div>`
       : `<div>✓ Te alcanza hasta ${hasta}</div>`);
 }
 function rowTx(t){
@@ -1355,8 +1388,8 @@ function renderPlan(){
         <span class="row__t"><span>${esc(m.name)}</span>
           <span class="row__v" style="color:${av<0?"var(--coral-dk)":"var(--ink)"}">${S.currency} ${fmt(av)}</span></span>
         <span class="row__s">
-          <span style="white-space:nowrap">${dec!==undefined ? "Declaraste "+S.currency+" "+fmt(dec)
-            : vi ? `Viene de ${MES3[+prevM(VM).slice(5)-1]}: ${fmt(vi)}`
+          <span style="white-space:nowrap">${dec!==undefined ? "✓ Confirmado"
+            : vi ? `<span style="color:var(--coral-dk)">Viene de ${MES3[+prevM(VM).slice(5)-1]}: ${fmt(vi)} · confirmar</span>`
             : '<span class="row__set">Declarar saldo</span>'}</span>
           <span>${entr?"+"+fmt(entr)+"  ":""}${usado?"−"+fmt(usado)+"  ":""}${trTxt}</span></span>
       </span></button>`;
@@ -1384,13 +1417,13 @@ function renderPlan(){
         ${(()=>{ const d=DIAS_CATS.includes(c.id)&&diasCat(VM,c.id); if(!d) return "";
           const t=diasTxt(d), prom = d.fijo ? `${S.currency} ${fmt(d.avg)} por día (fijo)`
                                             : `prom. ${S.currency} ${fmt(d.avg)} por día`;
-          const nota = !d.porSaldo ? "" : d.diasPres!==null
-            ? `Limitado por tu saldo · tu presupuesto daría ${diasTxt({dias:d.diasPres})}`
-            : "Según tu saldo disponible";
+          const nota = d.porSaldo
+            ? (d.diasPres!==null ? `Limitado por tu saldo · tu presupuesto daría ${diasTxt({dias:d.diasPres})}` : "Según tu saldo disponible")
+            : porQue(d) ? `Por tu presupuesto · tu saldo daría ${diasTxt({dias:d.diasSaldo})}` : "";
           return (t ? `<span class="row__s"><span style="font-weight:600;color:${d.dias===0||d.porSaldo?"var(--coral-dk)":"var(--accent-dk)"}">${t}</span>
             <span>${prom}</span></span>`
                     : `<span class="row__s"><span>${prom}</span></span>`)
-            + (nota ? `<span class="row__s"><span style="color:var(--coral-dk)">${nota}</span></span>` : ""); })()}
+            + (nota ? `<span class="row__s"><span style="color:${d.porSaldo?"var(--coral-dk)":"var(--muted)"}">${nota}</span></span>` : ""); })()}
       </span></button>${DIAS_CATS.includes(c.id) ? diaRow(c) : ""}`;
   }).join("");
   pb.onclick = e=>{
@@ -1448,6 +1481,7 @@ function renderClose(){
       <span class="row__b"><span class="row__t">
         <span>Plata que de verdad ${cerrado?"te quedó":"te queda"}</span>
         <span class="row__v ${disp<0?"neg":""}">${S.currency} ${fmt(disp)}</span></span>
+        ${cerrado ? `<span class="row__s"><span>No pasa a ${mName(nextM(VM))}: se fue a tus ahorros u otro lado.</span></span>` : ""}
         ${papel>disp+0.004 ? `<span class="row__s"><span style="color:var(--coral-dk)">En el papel tus categorías tienen ${S.currency} ${fmt(papel)} sin gastar, pero solo ${cerrado?"te quedó":"tienes"} ${S.currency} ${fmt(Math.max(0,disp))}: lo que gastaste de más salió de ahí.</span></span>` : ""}
       </span></div>` : ""}
     ${filas.map(r=>{
@@ -1463,21 +1497,21 @@ function renderClose(){
             sinLim ? `<span style="color:var(--faint);font-weight:500">sin tope</span>`
                    : (bien?quedaTxt+" ":"excedió ")+fmt(Math.abs(d))}</span></span>
           <span class="row__s"><span>${S.currency} ${fmt(r.sp)}${r.lim?" de "+S.currency+" "+fmt(r.lim):""}</span>
-            ${dt && !cerrado ? `<span style="font-weight:600;color:${dd.porSaldo||dd.dias===0?"var(--coral-dk)":"var(--accent-dk)"}">${dt}${dd.porSaldo?" por tu saldo":""}</span>` : ""}</span>
+            ${dt && !cerrado ? `<span style="font-weight:600;color:${dd.porSaldo||dd.dias===0?"var(--coral-dk)":"var(--accent-dk)"}">${dt}${porQue(dd)?" "+porQue(dd):""}</span>` : ""}</span>
         </span></div>`; }).join("")}
     <div style="padding:13px 14px">
       ${cerrado
         ? `<div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">
              Cerrado el ${new Date(cerrado.ts).toLocaleDateString("es-PE")}.</div>
            <button class="btn btn--x" id="reopenM" style="width:100%;flex:none;height:46px;font-size:15px">Reabrir mes</button>`
-        : `<button class="btn btn--go" id="closeM" style="width:100%;height:48px;font-size:16px">Cerrar ${cap(mName(VM))}</button>`}
+        : `<button class="btn btn--go" id="closeM" style="width:100%;height:48px;font-size:16px">Cerrar ${cap(mName(VM))}</button>
+           <div style="font-size:12px;color:var(--muted);margin-top:8px">Al cerrarlo, lo que te sobre no pasa a ${mName(nextM(VM))}: ese mes empieza en 0.</div>`}
     </div>`;
 
   const cb=$("#closeM");
   if(cb) cb.onclick=()=>{
-    if(!confirm(`¿Cerrar ${mName(VM)}?\n\nSe guarda el resultado de cumplimiento. Puedes reabrirlo cuando quieras.`)) return;
-    S.closed[VM]={ts:Date.now(),bud:bt,spent:sp}; save(); renderAll();
-    toast(ok?`Cerrado. Te sobró ${S.currency} ${fmt(dif)} del presupuesto`:`Cerrado. Te pasaste ${S.currency} ${fmt(-dif)} del presupuesto`);
+    if(cerrarMes(VM))
+      toast(ok?`Cerrado. Te sobró ${S.currency} ${fmt(dif)} del presupuesto`:`Cerrado. Te pasaste ${S.currency} ${fmt(-dif)} del presupuesto`);
   };
   const rb=$("#reopenM");
   if(rb) rb.onclick=()=>{ delete S.closed[VM]; save(); renderAll(); toast("Mes reabierto"); };
